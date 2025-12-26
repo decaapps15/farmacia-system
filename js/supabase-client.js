@@ -1,3 +1,5 @@
+// supabase-client.js - VERSIÓN PARA GITHUB PAGES
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
 // Configuración de Supabase
 const SUPABASE_URL = 'https://gbypnqhpmtpojqnafjhg.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_I9BjL0iF5f3p0xIOKGNAzw_mf-87NBY';
@@ -104,6 +106,7 @@ const db = {
 
 
 window.db = db;
+
 
 
 
