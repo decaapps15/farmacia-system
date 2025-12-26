@@ -1,9 +1,9 @@
 // Configuración de Supabase
 const SUPABASE_URL = 'https://gbypnqhpmtpojqnafjhg.supabase.co';
-const SUPABASE_API_KEY = 'sb_publishable_I9BjL0iF5f3p0xIOKGNAzw_mf-87NBY';
+const SUPABASE_ANON_KEY = 'sb_publishable_I9BjL0iF5f3p0xIOKGNAzw_mf-87NBY';
 
 // Inicializar cliente Supabase
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_API_KEY);
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Exportar para uso en otros módulos
 window.supabaseClient = supabase;
@@ -104,5 +104,6 @@ const db = {
 
 
 window.db = db;
+
 
 
