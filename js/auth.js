@@ -1,6 +1,61 @@
 // auth.js - Sistema de Autenticación para Farmacia
 import { supabase } from './supabase-client.js';
+// AÑADE esto al inicio de auth.js, DESPUÉS de los imports
+export async function checkAuthStatus() {
+    try {
+        console.log('🔍 Verificando estado de autenticación...');
+        
+        // 1. Verificar sesión en Supabase Auth
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+            console.error('❌ Error al obtener sesión:', error);
+            return { authenticated: false, error };
+        }
+        
+        if (!session) {
+            console.log('⚠️ No hay sesión activa');
+            return { authenticated: false };
+        }
+        
+        console.log('✅ Sesión encontrada:', session.user.email);
+        
+        // 2. Obtener datos del empleado
+        const { data: empleado, error: empleadoError } = await supabase
+            .from('empleados')
+            .select('*')
+            .eq('user_id', session.user.id)
+            .eq('activo', true)
+            .single();
+        
+        if (empleadoError) {
+            console.error('❌ Error al obtener empleado:', empleadoError);
+            
+            // Crear perfil automáticamente si no existe
+            const nuevoEmpleado = await createEmployeeProfile(session.user);
+            return { 
+                authenticated: true, 
+                user: session.user, 
+                empleado: nuevoEmpleado 
+            };
+        }
+        
+        console.log('✅ Empleado encontrado:', empleado.nombre);
+        
+        return {
+            authenticated: true,
+            user: session.user,
+            empleado: empleado
+        };
+        
+    } catch (error) {
+        console.error('🔥 Error crítico en checkAuthStatus:', error);
+        return { authenticated: false, error };
+    }
+}
 
+// Hacerla global para testing
+window.checkAuthStatus = checkAuthStatus;
 class AuthManager {
     constructor() {
         this.currentUser = null;
@@ -459,3 +514,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Exportar para uso en otros módulos
 export default AuthManager;
+
