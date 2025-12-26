@@ -190,66 +190,97 @@ class AuthManager {
         }
     }
 
-    async login(email, password, rememberMe = false) {
-        try {
-            this.showMessage('Verificando credenciales...', 'info');
-            
-            const { data, error } = await supabase.auth.signInWithPassword({
+   async login(email, password = null, rememberMe = false) {
+    try {
+        console.log('🔐 Intentando login para:', email, password ? '(con password)' : '(magic link)');
+        
+        const btn = document.getElementById('btnLogin');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = password 
+                ? '<i class="fas fa-spinner fa-spin"></i> Verificando...'
+                : '<i class="fas fa-spinner fa-spin"></i> Enviando enlace...';
+        }
+        
+        let result;
+        
+        if (password) {
+            // Login tradicional con email/password
+            result = await supabase.auth.signInWithPassword({
                 email: email.trim().toLowerCase(),
                 password: password
             });
-
-            if (error) throw error;
-
-            // Configurar persistencia de sesión
+            
+            if (result.error) throw result.error;
+            
+            // Guardar preferencia de "recordarme"
             if (rememberMe) {
-                // Guardar en localStorage para recordar usuario
                 localStorage.setItem('rememberedEmail', email);
-                
-                // Establecer expiración más larga
-                await supabase.auth.setSession({
-                    access_token: data.session.access_token,
-                    refresh_token: data.session.refresh_token
-                });
             } else {
-                // Limpiar email recordado
                 localStorage.removeItem('rememberedEmail');
             }
-
-            this.currentUser = data.user;
-            const employee = await this.loadEmployeeData();
             
-            // Registrar login en historial
-            await this.logLoginActivity(employee);
+            this.currentUser = result.data.user;
+            const employee = await this.loadEmployeeData();
             
             this.showMessage(`¡Bienvenido ${employee.nombre}!`, 'success');
             
-            // Redirigir después de 1 segundo
-            setTimeout(() => {
-                window.location.href = 'dashboard.html';
-            }, 1000);
+            // Redirigir después de breve delay
+            setTimeout(() => this.redirectToDashboard(), 1000);
             
             return { success: true, employee };
-
-        } catch (error) {
-            console.error('Login error:', error);
             
-            let message = 'Error en el inicio de sesión';
+        } else {
+            // Magic Link - envía correo de login
+            result = await supabase.auth.signInWithOtp({
+                email: email.trim().toLowerCase(),
+                options: {
+                    emailRedirectTo: 'https://decaapps15.github.io/farmacia-system/dashboard.html',
+                    shouldCreateUser: false // No crear usuario nuevo, solo login
+                }
+            });
             
-            if (error.message.includes('Invalid login credentials')) {
-                message = 'Email o contraseña incorrectos';
-            } else if (error.message.includes('Email not confirmed')) {
-                message = 'Confirma tu correo electrónico primero';
-            } else if (error.message.includes('User not found')) {
-                message = 'Usuario no registrado';
-            } else if (error.message.includes('rate limit')) {
-                message = 'Demasiados intentos. Intenta más tarde';
+            if (result.error) throw result.error;
+            
+            this.showMessage('📧 ¡Enlace mágico enviado a tu correo! Revisa tu bandeja de entrada.', 'success');
+            
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Enlace enviado';
             }
             
-            this.showMessage(message, 'error');
-            return { success: false, error: message };
+            return { success: true, magicLinkSent: true };
         }
+        
+    } catch (error) {
+        console.error('Login failed:', error);
+        
+        let message = 'Error en el inicio de sesión';
+        if (error.message.includes('Invalid login credentials')) {
+            message = 'Email o contraseña incorrectos';
+        } else if (error.message.includes('Email not confirmed')) {
+            message = 'Confirma tu correo electrónico';
+        } else if (error.message.includes('User not found')) {
+            message = 'Usuario no registrado';
+        } else if (error.message.includes('Magic link')) {
+            message = 'Error enviando enlace mágico';
+        }
+        
+        this.showMessage(message, 'error');
+        
+        const btn = document.getElementById('btnLogin');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Iniciar Sesión';
+        }
+        
+        return { 
+            success: false, 
+            error: message,
+            magicLinkSent: false 
+        };
     }
+}
 
     async logLoginActivity(employee) {
         try {
@@ -514,4 +545,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Exportar para uso en otros módulos
 export default AuthManager;
+
 
