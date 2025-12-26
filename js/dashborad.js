@@ -1,3 +1,6 @@
+// dashboard.js - Colócalo en la misma carpeta
+import { supabase } from './supabase-client.js';
+
 // dashboard.js - Versión simplificada
 class Dashboard {
     constructor() {
@@ -267,4 +270,5 @@ class Dashboard {
 // Inicializar dashboard cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
     window.dashboard = new Dashboard();
+
 });
