@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farmacia 4 de Enero - Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Estilos temporales para debug */
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Botón Hamburguesa - FUERA del sidebar -->
+        <button class="hamburger-btn" id="hamburgerBtn">
+            <i class="fas fa-bars"></i>
+        </button>
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="fas fa-prescription-bottle-alt"></i>
+                    <h2>Farmacia 4 de Enero</h2>
+                </div>
+                <button class="close-sidebar" id="closeSidebar">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="user-info">
+                <div class="user-avatar">
+                    <i class="fas fa-user-md"></i>
+                </div>
+                <div class="user-details">
+                    <h3 id="userName">Cargando...</h3>
+                    <span class="user-role" id="userRole">...</span>
+                </div>
+            </div>
+
+            <nav class="menu">
+                <a href="#" class="menu-item active" data-section="inicio" id="menu-inicio">
+                    <i class="fas fa-home"></i>
+                    <span>Inicio</span>
+                </a>
+                
+                <a href="#" class="menu-item" data-section="inventario" id="menu-inventario">
+                    <i class="fas fa-boxes"></i>
+                    <span>Inventario</span>
+                </a>
+                
+                <a href="#" class="menu-item" data-section="ventas" id="menu-ventas">
+                    <i class="fas fa-cash-register"></i>
+                    <span>Punto de Venta</span>
+                </a>
+                
+                <a href="#" class="menu-item" data-section="usuarios" id="menu-usuarios">
+                    <i class="fas fa-users"></i>
+                    <span>Usuarios</span>
+                </a>
+                
+                <a href="#" class="menu-item" data-section="historial" id="menu-historial">
+                    <i class="fas fa-history"></i>
+                    <span>Historial</span>
+                </a>
+            </nav>
+
+            <div class="menu-footer">
+                <button id="logoutBtn" class="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Cerrar Sesión</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Overlay para móvil -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+        <!-- Main Content -->
+        <main class="main-content" id="mainContent">
+            <!-- Top Bar -->
+            <header class="top-bar">
+                <div class="top-bar-info">
+                    <div class="date-time">
+                        <div class="current-date" id="currentDate"></div>
+                        <div class="current-time" id="currentTime"></div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <section class="content-area" id="contentArea">
+                <!-- El contenido dinámico se carga aquí -->
+                <div class="loading-screen">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Cargando dashboard...</p>
+                </div>
+            </section>
+
+            <!-- Footer -->
+            <footer class="main-footer">
+                <p>© 2026 Farmacia 4 de Enero v1.0 | Sistema de Gestión Farmacéutica</p>
+                <p class="session-info">
+                    <i class="fas fa-shield-alt"></i>
+                    Sesión segura • Última actualización: <span id="lastUpdate">Ahora</span>
+                </p>
+            </footer>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="js/supabase-client.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/inventario.js"></script>
+    <script src="js/ventas.js"></script>
+    <script src="js/usuarios.js"></script>
+    <script src="js/historial.js"></script>
+    <script src="js/dashboard.js"></script>
+    
+    <script>
+        // Script simple para el menú hamburguesa
+        document.addEventListener('DOMContentLoaded', function() {
+            const hamburgerBtn = document.getElementById('hamburgerBtn');
+            const closeSidebar = document.getElementById('closeSidebar');
+            const sidebar = document.getElementById('sidebar');
+            const sidebarOverlay = document.getElementById('sidebarOverlay');
+            const mainContent = document.getElementById('mainContent');
+            
+            // Función para abrir sidebar
+            function openSidebar() {
+                sidebar.classList.add('active');
+                sidebarOverlay.classList.add('active');
+                document.body.style.overflow = 'hidden';
+            }
+            
+            // Función para cerrar sidebar
+            function closeSidebarFunc() {
+                sidebar.classList.remove('active');
+                sidebarOverlay.classList.remove('active');
+                document.body.style.overflow = '';
+            }
+            
+            // Event listeners
+            if (hamburgerBtn) {
+                hamburgerBtn.addEventListener('click', openSidebar);
+            }
+            
+            if (closeSidebar) {
+                closeSidebar.addEventListener('click', closeSidebarFunc);
+            }
+            
+            if (sidebarOverlay) {
+                sidebarOverlay.addEventListener('click', closeSidebarFunc);
+            }
+            
+            // Cerrar sidebar al hacer clic en un menú item
+            document.querySelectorAll('.menu-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    if (window.innerWidth <= 768) {
+                        closeSidebarFunc();
+                    }
+                });
+            });
+            
+            // Cerrar con tecla ESC
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && sidebar.classList.contains('active')) {
+                    closeSidebarFunc();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
