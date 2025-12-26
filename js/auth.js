@@ -1,3 +1,6 @@
+// auth.js - Sistema de Autenticación para Farmacia
+import { supabase } from './supabase-client.js';
+
 class AuthManager {
     constructor() {
         this.currentUser = null;
@@ -6,8 +9,18 @@ class AuthManager {
     }
 
     async init() {
+        // Verificar sesión al cargar
         await this.checkSession();
-        this.setupEventListeners();
+        
+        // Configurar listeners solo si estamos en login
+        if (window.location.pathname.includes('index.html') || 
+            window.location.pathname === '/' || 
+            window.location.pathname.includes('login')) {
+            this.setupLoginEventListeners();
+        }
+        
+        // Configurar logout si estamos en dashboard
+        this.setupLogoutListener();
     }
 
     async checkSession() {
@@ -20,41 +33,114 @@ class AuthManager {
                 this.currentUser = session.user;
                 await this.loadEmployeeData();
                 
-                // Redirigir si está en login
-                if (window.location.pathname.includes('index.html')) {
+                // Redirigir si está en login page
+                const currentPath = window.location.pathname;
+                const isLoginPage = currentPath.includes('index.html') || 
+                                   currentPath === '/' || 
+                                   currentPath.includes('login');
+                
+                if (isLoginPage) {
                     window.location.href = 'dashboard.html';
                 }
-            } else if (!window.location.pathname.includes('index.html')) {
+                
+                // Actualizar UI con info del empleado
+                this.updateUIWithEmployeeInfo();
+                
+            } else if (!this.isPublicPage()) {
+                // Si no hay sesión y no está en página pública, redirigir a login
                 window.location.href = 'index.html';
             }
         } catch (error) {
             console.error('Error checking session:', error);
-            this.showMessage('Error verificando sesión', 'error');
+            
+            // Solo mostrar error si no estamos en login
+            if (!this.isPublicPage()) {
+                this.showMessage('Error verificando sesión. Redirigiendo...', 'error');
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 2000);
+            }
         }
+    }
+
+    isPublicPage() {
+        const publicPages = [
+            'index.html',
+            '/',
+            'login.html',
+            'reset-password.html',
+            'forgot-password.html'
+        ];
+        
+        return publicPages.some(page => window.location.pathname.includes(page));
     }
 
     async loadEmployeeData() {
         try {
-            if (!this.currentUser) return;
+            if (!this.currentUser) return null;
             
-            this.currentEmployee = await db.getCurrentEmployee();
+            const { data, error } = await supabase
+                .from('empleados')
+                .select('*')
+                .eq('user_id', this.currentUser.id)
+                .eq('activo', true)
+                .single();
+
+            if (error) throw error;
             
-            if (!this.currentEmployee) {
-                console.warn('Empleado no encontrado para el usuario actual');
-            }
+            this.currentEmployee = data;
             
-            // Guardar en sessionStorage para uso inmediato
-            sessionStorage.setItem('employee', JSON.stringify(this.currentEmployee));
+            // Guardar en sessionStorage para acceso rápido
+            sessionStorage.setItem('currentEmployee', JSON.stringify(this.currentEmployee));
+            
+            return this.currentEmployee;
             
         } catch (error) {
             console.error('Error loading employee data:', error);
+            
+            // Si no encuentra empleado pero sí usuario auth, crear uno automático
+            if (error.code === 'PGRST116') {
+                console.log('Creando perfil de empleado automático...');
+                return await this.createEmployeeProfile();
+            }
+            
+            return null;
+        }
+    }
+
+    async createEmployeeProfile() {
+        try {
+            const { data, error } = await supabase
+                .from('empleados')
+                .insert({
+                    user_id: this.currentUser.id,
+                    nombre: this.currentUser.email.split('@')[0],
+                    email: this.currentUser.email,
+                    rol: 'cajero', // Rol por defecto
+                    activo: true
+                })
+                .select()
+                .single();
+
+            if (error) throw error;
+            
+            this.currentEmployee = data;
+            sessionStorage.setItem('currentEmployee', JSON.stringify(data));
+            
+            return data;
+            
+        } catch (error) {
+            console.error('Error creating employee profile:', error);
+            return null;
         }
     }
 
     async login(email, password, rememberMe = false) {
         try {
+            this.showMessage('Verificando credenciales...', 'info');
+            
             const { data, error } = await supabase.auth.signInWithPassword({
-                email: email.trim(),
+                email: email.trim().toLowerCase(),
                 password: password
             });
 
@@ -62,28 +148,47 @@ class AuthManager {
 
             // Configurar persistencia de sesión
             if (rememberMe) {
-                const { error: persistError } = await supabase.auth.setSession({
+                // Guardar en localStorage para recordar usuario
+                localStorage.setItem('rememberedEmail', email);
+                
+                // Establecer expiración más larga
+                await supabase.auth.setSession({
                     access_token: data.session.access_token,
                     refresh_token: data.session.refresh_token
                 });
-                if (persistError) throw persistError;
+            } else {
+                // Limpiar email recordado
+                localStorage.removeItem('rememberedEmail');
             }
 
             this.currentUser = data.user;
-            await this.loadEmployeeData();
+            const employee = await this.loadEmployeeData();
             
-            this.showMessage('Inicio de sesión exitoso', 'success');
-            return { success: true, employee: this.currentEmployee };
+            // Registrar login en historial
+            await this.logLoginActivity(employee);
+            
+            this.showMessage(`¡Bienvenido ${employee.nombre}!`, 'success');
+            
+            // Redirigir después de 1 segundo
+            setTimeout(() => {
+                window.location.href = 'dashboard.html';
+            }, 1000);
+            
+            return { success: true, employee };
 
         } catch (error) {
+            console.error('Login error:', error);
+            
             let message = 'Error en el inicio de sesión';
             
             if (error.message.includes('Invalid login credentials')) {
-                message = 'Credenciales incorrectas';
+                message = 'Email o contraseña incorrectos';
             } else if (error.message.includes('Email not confirmed')) {
                 message = 'Confirma tu correo electrónico primero';
             } else if (error.message.includes('User not found')) {
                 message = 'Usuario no registrado';
+            } else if (error.message.includes('rate limit')) {
+                message = 'Demasiados intentos. Intenta más tarde';
             }
             
             this.showMessage(message, 'error');
@@ -91,39 +196,78 @@ class AuthManager {
         }
     }
 
+    async logLoginActivity(employee) {
+        try {
+            await supabase
+                .from('historial_auditoria')
+                .insert({
+                    tabla_afectada: 'auth',
+                    accion: 'LOGIN',
+                    datos_nuevos: {
+                        empleado_id: employee.id,
+                        empleado_nombre: employee.nombre,
+                        timestamp: new Date().toISOString(),
+                        user_agent: navigator.userAgent
+                    },
+                    empleado_id: employee.id
+                });
+        } catch (error) {
+            console.error('Error logging login activity:', error);
+        }
+    }
+
     async logout() {
         try {
-            // Registrar cierre de sesión en historial
+            // Registrar logout en historial
             if (this.currentEmployee) {
-                await db.query('historial_auditoria', 'insert', {
-                    data: {
-                        tabla_afectada: 'auth',
-                        accion: 'LOGOUT',
-                        datos_nuevos: { 
-                            empleado: this.currentEmployee.nombre,
-                            timestamp: new Date().toISOString()
-                        },
-                        empleado_id: this.currentEmployee.id
-                    }
-                });
+                await this.logLogoutActivity();
             }
 
             const { error } = await supabase.auth.signOut();
             if (error) throw error;
 
-            // Limpiar almacenamiento local
-            sessionStorage.clear();
-            localStorage.removeItem('employee');
+            // Limpiar todo el almacenamiento
+            this.clearStorage();
             
             this.currentUser = null;
             this.currentEmployee = null;
             
-            window.location.href = 'index.html';
+            this.showMessage('Sesión cerrada correctamente', 'success');
+            
+            // Redirigir a login
+            setTimeout(() => {
+                window.location.href = 'index.html';
+            }, 1000);
             
         } catch (error) {
             console.error('Error al cerrar sesión:', error);
             this.showMessage('Error al cerrar sesión', 'error');
         }
+    }
+
+    async logLogoutActivity() {
+        try {
+            await supabase
+                .from('historial_auditoria')
+                .insert({
+                    tabla_afectada: 'auth',
+                    accion: 'LOGOUT',
+                    datos_nuevos: {
+                        empleado_id: this.currentEmployee.id,
+                        empleado_nombre: this.currentEmployee.nombre,
+                        timestamp: new Date().toISOString()
+                    },
+                    empleado_id: this.currentEmployee.id
+                });
+        } catch (error) {
+            console.error('Error logging logout activity:', error);
+        }
+    }
+
+    clearStorage() {
+        sessionStorage.clear();
+        localStorage.removeItem('currentEmployee');
+        localStorage.removeItem('supabase.auth.token');
     }
 
     async resetPassword(email) {
@@ -134,10 +278,11 @@ class AuthManager {
 
             if (error) throw error;
 
-            this.showMessage('Enlace de recuperación enviado', 'success');
+            this.showMessage('Enlace de recuperación enviado a tu correo', 'success');
             return { success: true };
 
         } catch (error) {
+            console.error('Reset password error:', error);
             this.showMessage('Error enviando enlace de recuperación', 'error');
             return { success: false, error };
         }
@@ -146,6 +291,7 @@ class AuthManager {
     hasPermission(requiredRole) {
         if (!this.currentEmployee) return false;
         
+        // Jerarquía de roles
         const roleHierarchy = {
             'admin': 4,
             'supervisor': 3,
@@ -163,18 +309,27 @@ class AuthManager {
         return userRoleLevel >= requiredRoleLevel;
     }
 
-    setupEventListeners() {
+    setupLoginEventListeners() {
         // Login form
         const loginForm = document.getElementById('loginForm');
         if (loginForm) {
+            // Cargar email recordado si existe
+            const rememberedEmail = localStorage.getItem('rememberedEmail');
+            if (rememberedEmail) {
+                document.getElementById('email').value = rememberedEmail;
+                document.getElementById('rememberMe').checked = true;
+            }
+            
             loginForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 
                 const email = document.getElementById('email').value;
                 const password = document.getElementById('password').value;
-                const rememberMe = document.getElementById('rememberMe').checked;
+                const rememberMe = document.getElementById('rememberMe')?.checked || false;
                 
                 const btn = document.getElementById('btnLogin');
+                if (!btn) return;
+                
                 const originalText = btn.innerHTML;
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando...';
                 btn.disabled = true;
@@ -196,9 +351,11 @@ class AuthManager {
                 if (passwordInput.type === 'password') {
                     passwordInput.type = 'text';
                     icon.className = 'fas fa-eye-slash';
+                    toggleBtn.setAttribute('title', 'Ocultar contraseña');
                 } else {
                     passwordInput.type = 'password';
                     icon.className = 'fas fa-eye';
+                    toggleBtn.setAttribute('title', 'Mostrar contraseña');
                 }
             });
         }
@@ -219,7 +376,9 @@ class AuthManager {
                 e.preventDefault();
                 const email = document.getElementById('recoveryEmail').value;
                 await this.resetPassword(email);
-                document.getElementById('passwordModal').classList.add('hidden');
+                setTimeout(() => {
+                    document.getElementById('passwordModal').classList.add('hidden');
+                }, 2000);
             });
         }
 
@@ -232,18 +391,64 @@ class AuthManager {
         }
     }
 
-    showMessage(message, type = 'info') {
-        const messageEl = document.getElementById('message');
-        if (!messageEl) return;
+    setupLogoutListener() {
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                await this.logout();
+            });
+        }
+    }
+
+    updateUIWithEmployeeInfo() {
+        // Actualizar nombre en navbar si existe
+        const userNameElement = document.getElementById('userName');
+        if (userNameElement && this.currentEmployee) {
+            userNameElement.textContent = this.currentEmployee.nombre;
+        }
         
+        // Actualizar rol si existe
+        const userRoleElement = document.getElementById('userRole');
+        if (userRoleElement && this.currentEmployee) {
+            userRoleElement.textContent = this.currentEmployee.rol;
+        }
+    }
+
+    showMessage(message, type = 'info') {
+        // Buscar contenedor de mensajes
+        let messageEl = document.getElementById('message');
+        
+        // Crear si no existe
+        if (!messageEl) {
+            messageEl = document.createElement('div');
+            messageEl.id = 'message';
+            document.body.appendChild(messageEl);
+        }
+        
+        // Configurar mensaje
         messageEl.textContent = message;
-        messageEl.className = `message ${type}`;
+        messageEl.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 transition-all duration-300 ${
+            type === 'success' ? 'bg-green-100 text-green-800 border border-green-300' :
+            type === 'error' ? 'bg-red-100 text-red-800 border border-red-300' :
+            'bg-blue-100 text-blue-800 border border-blue-300'
+        }`;
         messageEl.classList.remove('hidden');
         
-        // Auto-ocultar después de 5 segundos
+        // Auto-ocultar
         setTimeout(() => {
             messageEl.classList.add('hidden');
         }, 5000);
+    }
+
+    // Método para obtener empleado actual (para otros módulos)
+    getCurrentEmployee() {
+        return this.currentEmployee;
+    }
+
+    // Método para verificar si está autenticado
+    isAuthenticated() {
+        return !!this.currentUser && !!this.currentEmployee;
     }
 }
 
@@ -251,3 +456,6 @@ class AuthManager {
 document.addEventListener('DOMContentLoaded', () => {
     window.authManager = new AuthManager();
 });
+
+// Exportar para uso en otros módulos
+export default AuthManager;
